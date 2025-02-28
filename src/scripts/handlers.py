@@ -25,14 +25,11 @@ def get_keyboard() -> ReplyKeyboardMarkup:
 async def get_difference_ratings(text: str):
     ratings = re.findall(r'\d+\.\d+', text)
 
-    if len(ratings) >= 2:
-        rating_1 = float(ratings[0])
-        rating_2 = float(ratings[1])
-        difference = rating_1 - rating_2
+    if len(ratings) < 2:
+        return "Не удалось извлечь данные."
+    difference = float(ratings[0]) - float(ratings[1])
 
-        return f'Разница между 1 и 2 местом: {difference:.2f}'
-    else:
-      return "Не удалось извлечь данные."
+    return f'Разница между 1 и 2 местом: {difference:.2f}'
 
 
 async def monitor_site(chat_id: int, bot) -> None:
@@ -44,10 +41,13 @@ async def monitor_site(chat_id: int, bot) -> None:
     with contextlib.suppress(asyncio.CancelledError):
         while True:
             html = await HtmlParser.parse_top_developers()
+            if not html:
+                await asyncio.sleep(30)
+                continue
             await bot.send_message(chat_id, html)
             different = await get_difference_ratings(html)
             await bot.send_message(chat_id, different)
-            await asyncio.sleep(60)
+            await asyncio.sleep(30)
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -89,13 +89,3 @@ async def stop_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "Мониторинг не был запущен.",
             reply_markup=get_keyboard()
         )
-
-# async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-#     """
-#     Обработчик команды /start.
-#     Отправляет приветственное сообщение с клавиатурой.
-#     """
-#     await update.message.reply_text(
-#         "Привет! Выберите команду из клавиатуры ниже.",
-#         reply_markup=get_keyboard()
-#     )

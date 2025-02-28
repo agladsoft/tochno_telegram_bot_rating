@@ -3,15 +3,31 @@ import asyncio
 import math
 import re
 import logging
-from typing import Optional, Dict, Tuple, Any
+from typing import Optional, Dict, Any
 
 import aiohttp
+import aiofiles
 from bs4 import BeautifulSoup
-from tabulate import tabulate
 
 from src.settings import setting
 
 logging.basicConfig(level=logging.INFO)
+
+JSON_FILE = "data.json"
+
+
+async def load_from_json() -> dict:
+    try:
+        async with aiofiles.open(JSON_FILE, "r") as f:
+            content = await f.read()
+            return json.loads(content)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+async def save_to_json(data: dict):
+    async with aiofiles.open(JSON_FILE, "w") as f:
+        await f.write(json.dumps(data, indent=4))
 
 
 class HttpClient:
@@ -53,124 +69,56 @@ class VoteCounter:
             return "N/A", "N/A"
         return votes, rating
 
-    @staticmethod
-    def calculate_votes_for_target_difference(rating_first, votes_first, rating_second, votes_second,
-                                              target_diff=setting.COMPARE_RATING) -> int:
-        """
-    Рассчитывает, сколько дополнительных голосов необходимо добавить, чтобы добиться разницы в рейтингах
-    между первой и второй компанией равной target_diff. При этом:
-      - К первой компании прибавляются голоса с оценкой 5.
-      - К второй компании прибавляются голоса с оценкой 1.
-
-    Новый рейтинг компаний вычисляется как:
-      R1 = (S1 + 5*x) / (votes_first + x)
-      R2 = (S2 + 1*x) / (votes_second + x)
-    где:
-      S1 = rating_first * votes_first
-      S2 = rating_second * votes_second
-    Требуется, чтобы R1 - R2 = target_diff.
-
-    Путём приведения уравнения к виду A*x² + B*x + C = 0 получаем:
-      A = (4 - target_diff)
-      B = (S1 - S2 + 5*votes_second - votes_first) - target_diff * (votes_first + votes_second)
-      C = S1 * votes_second - S2 * votes_first - target_diff * votes_first * votes_second
-
-    Функция решает это уравнение, выбирает положительный корень и округляет результат до ближайшего
-    целого числа вверх (так как число голосов должно быть целым).
-
-    Аргументы:
-      rating_first (float): текущий рейтинг первой компании.
-      votes_first (int): текущее количество голосов первой компании.
-      rating_second (float): текущий рейтинг второй компании.
-      votes_second (int): текущее количество голосов второй компании.
-      target_diff (float): требуемая разница между рейтингами (по умолчанию 0.1).
-
-    Возвращает:
-      int: необходимое количество дополнительных голосов, которое нужно добавить к обеим компаниям
-           (положительные для первой с оценкой 5 и отрицательные для второй с оценкой 1),
-           чтобы разница в рейтингах стала равной target_diff.
-    """
-        # Вычисляем суммарные баллы для каждой компании
-
-        S1 = rating_first * votes_first
-        S2 = rating_second * votes_second
-
-        # Коэффициенты квадратного уравнения A*x² + B*x + C = 0
-        A = 4 - target_diff
-        B = (S1 - S2 + 5 * votes_second - votes_first) - target_diff * (votes_first + votes_second)
-        C = S1 * votes_second - S2 * votes_first - target_diff * votes_first * votes_second
-
-        discriminant = B ** 2 - 4 * A * C
-        if discriminant < 0:
-            raise ValueError("Дискриминант меньше нуля. Нет действительного решения для заданных параметров.")
-
-        # Выбираем положительный корень уравнения
-        x = (-B + math.sqrt(discriminant)) / (2 * A)
-        return math.ceil(x)
-
 
 class HtmlParser:
-    """Класс для парсинга HTML и объединения информации с голосами."""
+    """Класс для парсинга HTML и обновления информации о голосах."""
 
     @staticmethod
-    def compare_first_and_second_place_ratings(first_place_rating: float, second_place_rating: float) -> bool:
-        return round(first_place_rating - second_place_rating, 4) >= setting.COMPARE_RATING
-
-    @staticmethod
-    async def parse_top_developers() -> str | None:
+    async def parse_top_developers() -> Optional[str]:
         """
-        Парсит страницу с топом застройщиков и для каждого элемента,
-        если доступна ссылка, извлекает post_id и получает количество голосов.
-        Возвращает строку с таблицей результатов.
+        Парсит страницу с топом застройщиков, извлекает post_id, получает количество голосов,
+        сравнивает с сохранёнными данными и обновляет JSON при изменениях.
         """
         html = await HttpClient.fetch(setting.URL_TOP)
         if not html:
-            return "Ошибка загрузки страницы"
+            return None
 
         soup = BeautifulSoup(html, "html.parser")
         table = soup.find("div", class_="top-zastroyshikov-table")
         if not table:
-            return "Нет данных"
+            return None
 
-        rows = table.find_all("div", id="rating-table-item")[:5]
-        data = []
-        first_place = 0
-        first_voites = 0
-        for index, row in enumerate(rows, 1):
-            # Извлекаем место
-            place_div = row.find("div", class_="top-zastroyshikov-1")
-            place_text = place_div.get_text(strip=True) if place_div else "?"
+        rows = table.find_all("div", id="rating-table-item")[:10]
+        data = await load_from_json()
+        new_data = {}
+        result = []
+        updated = False
 
-            # Извлекаем название и, если есть ссылка – голосование
+        for row in rows:
             name_div = row.find("div", class_="top-zastroyshikov-2")
             a_tag = name_div.find("a") if name_div else None
             if a_tag:
                 name = a_tag.get_text(strip=True)
                 vote_page_url = a_tag.get("href", "")
                 post_id = await HtmlParser.extract_post_id(vote_page_url)
-                votes, rating = await VoteCounter.get_count(post_id) if post_id else "N/A"
-                if index == 2 and HtmlParser.compare_first_and_second_place_ratings(first_place, float(rating)):
-                    return f"Разница между 1 и 2 местом не более {setting.COMPARE_RATING} ⭐"
+                votes, rating = await VoteCounter.get_count(post_id) if post_id else ("N/A", "N/A")
 
+                new_data[post_id] = {"name": name, "rating": rating, "votes": votes}
+                if post_id not in data or (int(votes) - int(data[post_id]["votes"])) >= setting.DELTA_THRESHOLD:
+                    updated = True
+                result.append(f"🏆 *{name}* — {rating} ⭐, Голоса: {votes}")
 
-            else:
-                name = name_div.get_text(strip=True) if name_div else "Неизвестно"
-                rating = "N/A"
-                votes = "N/A"
-
-            first_place = rating
-            first_voites = votes
-            data.append(f"🏆 {place_text}. *{name}* — {rating} ⭐, Голоса: {votes}")
-
-        result_table = "\n".join(data)
-        result_table += f"\n\n👉 [Подробнее]({setting.URL_TOP})"
-        return result_table
+        if updated:
+            await save_to_json(new_data)
+            result_table = "\n".join(result)
+            result_table += f"\n\n👉 [Подробнее]({setting.URL_TOP})"
+            return result_table
+        return None
 
     @staticmethod
     async def extract_post_id(url: str) -> Optional[str]:
         """
         Извлекает post_id из тега <script> на странице по заданному URL.
-        Ищет шаблон "post_id":<цифры>.
         """
         html = await HttpClient.fetch(url)
         if not html:
@@ -181,6 +129,5 @@ class HtmlParser:
         if script_tag and (match := re.search(r'"post_id":(\d+)', script_tag.string)):
             return match[1]
         return None
-
 
 # asyncio.run(HtmlParser.parse_top_developers())

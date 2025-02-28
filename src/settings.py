@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     URL_TOP: str | None = os.getenv("URL_TOP")
     URL_VOTE: str | None = os.getenv("URL_VOTE")
     COMPARE_RATING: float | None = os.getenv("COMPARE_RATING")
+    DELTA_THRESHOLD: int | None = os.getenv("DELTA_THRESHOLD")
+    PROXY: str | None = os.getenv("PROXY")
 
 
 def get_settings():
