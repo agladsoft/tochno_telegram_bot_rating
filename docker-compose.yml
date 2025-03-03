@@ -1,0 +1,65 @@
+services:
+  bot:
+    build: .
+    container_name: telegram_bot
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+      - celery_worker
+    environment:
+      - PYTHONPATH=/app/src
+    command: python3 -m src.scripts.main
+    volumes:
+      - .:/app
+    working_dir: /app
+    networks:
+      - bot_network
+
+  redis:
+    image: redis:latest
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - bot_network
+
+  celery_worker:
+    build: .
+    container_name: celery_worker
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+    environment:
+      - PYTHONPATH=/app/src
+    command: celery -A src.scripts.tasks.cel worker --loglevel=info
+    volumes:
+      - .:/app
+    working_dir: /app
+    networks:
+      - bot_network
+
+  flower:
+    build: .
+    container_name: flower
+    restart: always
+    env_file: .env
+    depends_on:
+      - redis
+      - celery_worker
+    environment:
+      - PYTHONPATH=/app/src
+    command: celery -A src.scripts.tasks.cel flower --port=5555
+    ports:
+      - "5555:5555"
+    volumes:
+      - .:/app
+    working_dir: /app
+    networks:
+      - bot_network
+
+networks:
+  bot_network:
+    driver: bridge

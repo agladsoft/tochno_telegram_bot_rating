@@ -8,7 +8,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from update_env import *
+from src.scripts.update_env import *
 
 # Состояния для диалога изменения настроек
 SETTING_CHOICE, SETTING_VALUE = range(2)

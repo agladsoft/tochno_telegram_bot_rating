@@ -6,8 +6,17 @@ import json
 import subprocess
 import requests
 from src.scripts.logger import app_logger as logger
-from src.settings import setting
+from src.settings import get_settings
 from src.scripts.__init__ import *
+
+
+def get_my_ip():
+    try:
+        response = requests.get("https://api.myip.com")
+        logger.info(response.json())
+        return response.json()['ip']  # Выведет {'ip': 'X.X.X.X', 'country': 'YourCountry'}
+    except requests.RequestException as e:
+        print(f"Ошибка при запросе через прокси: {e}")
 
 
 def set_proxy() -> None:
@@ -16,7 +25,7 @@ def set_proxy() -> None:
 
     Использует настройки из setting.PROXY для формирования переменной окружения.
     """
-    os.environ['https_proxy'] = f'http://{setting.PROXY}'
+    os.environ['https_proxy'] = f'http://{get_settings().PROXY}'
 
 
 def check_proxy() -> bool:
@@ -30,8 +39,8 @@ def check_proxy() -> bool:
         response = requests.get("https://google.com", timeout=30)
         response.raise_for_status()
     except requests.RequestException as e:
-        logger.error(f"Прокси http://{setting.PROXY} не работает: {e}")
-        raise RuntimeError(f"Прокси http://{setting.PROXY} не работает: {e}")
+        logger.error(f"Прокси http://{get_settings().PROXY} не работает: {e}")
+        raise RuntimeError(f"Прокси http://{get_settings().PROXY} не работает: {e}")
 
     return True
 
@@ -188,46 +197,37 @@ def get_user_data() -> tuple[str, str, str, str, str, str, str]:
     return sub, first_name, second_name, city, phone, second_number, email
 
 
-def post_voices(post_id: str, star_rating: str) -> bool:
-    """
-    Проводит процесс голосования:
-    1. Генерирует данные пользователя.
-    2. Устанавливает и проверяет прокси.
-    3. Регистрирует пользователя.
-    4. Отправляет голос за рейтинг поста.
-
-    :param post_id: Идентификатор поста для голосования.
-    :param star_rating: Количество звезд для рейтинга.
-    :return: True, если голос успешно учтён, иначе False.
-    """
-    sub, first_name, second_name, city, phone, second_number, email = get_user_data()
-    set_proxy()
-    check_proxy()
-
+def registrations(sub, first_name, second_name, city, phone, second_number, email) -> True:
+    logger.info(f"Регистрируем пользователя {sub},{first_name},{second_name}, {city} {phone},{second_number}")
     registration_response = register_user(sub, first_name, second_name, city, phone, second_number, email)
     if not registration_response.get("response") or registration_response["response"].get("status") != "mail_sent":
-        logger.error(f"Ошибка регистрации: {registration_response.get('errors')}")
+        logger.error(
+            f"Ошибка регистрации: {registration_response}")
         return False
-
     logger.info("Регистрация успешна. Начинаем голосование...")
+    return True
+
+
+def votes(post_id: str, star_rating: str):
+    logger.info("Голосуем")
     rating_response = send_rating(post_id, star_rating)
     if rating_response.get("response"):
         avg_rating = rating_response["response"].get("avgRating", "Unknown")
         if not avg_rating:
-            logger.error(f"Ошибка при отправке голоса: {rating_response.get('response')}")
-            return False
+            logger.error(f"Ошибка при отправке голоса: {rating_response}")
+            raise RuntimeError(f"Ошибка при отправке голоса: {rating_response}")
         logger.info(
             f"Голос учтен. Текущий рейтинг: {avg_rating} Голоса : "
             f"{rating_response['response'].get('voteCount', 'Unknown')}")
-        return True
+        return True, False
     else:
-        logger.error(f"Ошибка при отправке голоса: {rating_response.get('errors')}")
-        return False
+        logger.error(f"Ошибка при отправке голоса: {rating_response}")
+        raise RuntimeError(f"Ошибка при отправке голоса: {rating_response}")
 
 
 def main(post_id: str, star_rating: str, voices: int) -> str:
     """
-    Запускает процесс голосования заданное количество раз.
+    Запускает процесс голосования заданное количество раз, учитывая IP-адрес.
 
     :param post_id: Идентификатор поста.
     :param star_rating: Количество звезд для рейтинга.
@@ -235,17 +235,49 @@ def main(post_id: str, star_rating: str, voices: int) -> str:
     :return: Строка, уведомляющая о завершении голосования.
     """
     success_count = 0
-    while success_count <= voices:
+    registered_users = {}
+    current_ip = None
+    user = None
+
+    while success_count < voices:
         try:
-            success = post_voices(post_id, star_rating)
-            if success:
+            set_proxy()
+            check_proxy()
+            new_ip = get_my_ip()
+
+            if new_ip != current_ip:
+                current_ip = new_ip
+                if current_ip in registered_users:
+                    user = registered_users[current_ip]
+                else:
+                    user = get_user_data()
+                    if registrations(*user):
+                        registered_users[current_ip] = user
+                    else:
+                        time.sleep(15)
+                        continue
+
+            logger.info(f"Голосуем пользователем {user} с IP {current_ip}")
+
+            while not votes(post_id, star_rating):
+                time.sleep(15)
+                if get_my_ip() != current_ip:
+                    break
+            else:
                 success_count += 1
+                time.sleep(180)
+
+            logger.info(f"Ожидаем смены IP (текущий: {current_ip})...")
+            while get_my_ip() == current_ip:
+                time.sleep(30)
+
         except RuntimeError:
-            time.sleep(30)
+            logger.error("Произошла ошибка во время голосования.")
+            time.sleep(15)
             continue
-        time.sleep(180)
+
     return "Голосование завершено"
 
 
 if __name__ == '__main__':
-    main('26124', 5, 62)
+    main('26124', '5', 35)

@@ -17,7 +17,8 @@ class Settings(BaseSettings):
 
 
 def get_settings():
+    load_dotenv(override=True)
     return Settings()
 
 
-setting = get_settings()
+

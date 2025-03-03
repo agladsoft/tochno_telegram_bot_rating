@@ -1,8 +1,8 @@
-from src.settings import setting
+from src.settings import get_settings
 from celery import Celery
 from src.scripts.tasks.ratings import main
 
-celery_app = Celery('tasks', broker=f'{setting.REDIS_URL}')
+celery_app = Celery('tasks', broker=f'{get_settings().REDIS_URL}')
 
 
 @celery_app.task(name='put_your_vote')

@@ -9,7 +9,7 @@ import aiohttp
 import aiofiles
 from bs4 import BeautifulSoup
 
-from src.settings import setting
+from src.settings import get_settings
 
 logging.basicConfig(level=logging.INFO)
 
@@ -61,7 +61,7 @@ class VoteCounter:
     async def get_count(post_id: str) -> tuple[Any, Any]:
         """Получает количество голосов для указанного post_id."""
         data = {"action": "load_results", "postID": post_id}
-        response = await HttpClient.fetch(setting.URL_VOTE, method="POST", data=data)
+        response = await HttpClient.fetch(get_settings().URL_VOTE, method="POST", data=data)
         try:
             votes = json.loads(response)['voteCount']
             rating = json.loads(response)['avgRating']
@@ -79,7 +79,7 @@ class HtmlParser:
         Парсит страницу с топом застройщиков, извлекает post_id, получает количество голосов,
         сравнивает с сохранёнными данными и обновляет JSON при изменениях.
         """
-        html = await HttpClient.fetch(setting.URL_TOP)
+        html = await HttpClient.fetch(get_settings().URL_TOP)
         if not html:
             return None
 
@@ -104,14 +104,14 @@ class HtmlParser:
                 votes, rating = await VoteCounter.get_count(post_id) if post_id else ("N/A", "N/A")
 
                 new_data[post_id] = {"name": name, "rating": rating, "votes": votes}
-                if post_id not in data or (int(votes) - int(data[post_id]["votes"])) >= setting.DELTA_THRESHOLD:
+                if post_id not in data or (int(votes) - int(data[post_id]["votes"])) >= get_settings().DELTA_THRESHOLD:
                     updated = True
                 result.append(f"🏆 *{name}* — {rating} ⭐, Голоса: {votes}")
 
         if updated:
             await save_to_json(new_data)
             result_table = "\n".join(result)
-            result_table += f"\n\n👉 [Подробнее]({setting.URL_TOP})"
+            result_table += f"\n\n👉 [Подробнее]({get_settings().URL_TOP})"
             return result_table
         return None
 
