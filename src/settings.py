@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     COMPARE_RATING: float | None = os.getenv("COMPARE_RATING")
     DELTA_THRESHOLD: int | None = os.getenv("DELTA_THRESHOLD")
     PROXY: str | None = os.getenv("PROXY")
+    USER_ID: int | None = os.getenv("USER_ID")
+    REDIS_URL: str | None = os.getenv("REDIS_URL")
 
 
 def get_settings():

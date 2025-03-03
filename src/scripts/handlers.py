@@ -4,7 +4,7 @@ import contextlib
 import re
 from typing import Dict
 
-from telegram import Update, ReplyKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ContextTypes
 from src.scripts.parser import HtmlParser
 
@@ -17,9 +17,11 @@ def get_keyboard() -> ReplyKeyboardMarkup:
     Создает постоянную клавиатуру с командами.
     """
     keyboard = [
-        ["/start", "/stop"]
+        ["/start", "/stop", "/settings", "/vote"]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
 
 
 async def get_difference_ratings(text: str):
@@ -89,3 +91,5 @@ async def stop_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "Мониторинг не был запущен.",
             reply_markup=get_keyboard()
         )
+
+

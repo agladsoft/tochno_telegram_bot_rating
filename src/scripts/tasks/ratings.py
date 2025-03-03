@@ -1,4 +1,3 @@
-import asyncio
 import os
 import random
 import string
@@ -6,10 +5,9 @@ import time
 import json
 import subprocess
 import requests
-import logging
+from src.scripts.logger import app_logger as logger
 from src.settings import setting
-from logger import app_logger as logger
-from __init__ import *
+from src.scripts.__init__ import *
 
 
 def set_proxy() -> None:
@@ -32,8 +30,8 @@ def check_proxy() -> bool:
         response = requests.get("https://google.com", timeout=30)
         response.raise_for_status()
     except requests.RequestException as e:
-        logger.error(f"Прокси {setting.PROXY} не работает: {e}")
-        raise RuntimeError(f"Прокси {setting.PROXY} не работает: {e}")
+        logger.error(f"Прокси http://{setting.PROXY} не работает: {e}")
+        raise RuntimeError(f"Прокси http://{setting.PROXY} не работает: {e}")
 
     return True
 
@@ -215,15 +213,19 @@ def post_voices(post_id: str, star_rating: str) -> bool:
     rating_response = send_rating(post_id, star_rating)
     if rating_response.get("response"):
         avg_rating = rating_response["response"].get("avgRating", "Unknown")
+        if not avg_rating:
+            logger.error(f"Ошибка при отправке голоса: {rating_response.get('response')}")
+            return False
         logger.info(
-            f"Голос учтен. Текущий рейтинг: {avg_rating} Голоса : {rating_response["response"].get("voteCount", "Unknown")}")
+            f"Голос учтен. Текущий рейтинг: {avg_rating} Голоса : "
+            f"{rating_response['response'].get('voteCount', 'Unknown')}")
         return True
     else:
-        logger.error(f"Ошибка при отправке голоса: {rating_response.get("errors")}")
+        logger.error(f"Ошибка при отправке голоса: {rating_response.get('errors')}")
         return False
 
 
-async def main(post_id: str, star_rating: str, voices: int) -> str:
+def main(post_id: str, star_rating: str, voices: int) -> str:
     """
     Запускает процесс голосования заданное количество раз.
 
@@ -235,14 +237,15 @@ async def main(post_id: str, star_rating: str, voices: int) -> str:
     success_count = 0
     while success_count <= voices:
         try:
-            success = await asyncio.to_thread(post_voices, post_id, star_rating)
+            success = post_voices(post_id, star_rating)
             if success:
                 success_count += 1
         except RuntimeError:
+            time.sleep(30)
             continue
-        await asyncio.sleep(125)
+        time.sleep(180)
     return "Голосование завершено"
 
 
 if __name__ == '__main__':
-    asyncio.run(main('26124', 5, 100))
+    main('26124', 5, 62)
