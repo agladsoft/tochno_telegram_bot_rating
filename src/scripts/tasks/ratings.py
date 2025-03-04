@@ -243,59 +243,55 @@ def main(post_id: str, star_rating: str, voices: int) -> str:
         try:
             set_proxy()
             check_proxy()
-            new_ip = get_my_ip()
+            current_ip = get_my_ip()
 
-            if new_ip != current_ip:
-                current_ip = new_ip
+            # Фаза регистрации: пытаемся зарегистрироваться с текущим IP
+            registered = False
+            while get_my_ip() == current_ip:
+                # Если для текущего IP уже есть зарегистрированный пользователь — используем его
                 if current_ip in registered_users:
                     user = registered_users[current_ip]
+                    registered = True
+                    break
                 else:
                     user = get_user_data()
                     if registrations(*user):
                         registered_users[current_ip] = user
+                        registered = True
+                        logger.info(f"Регистрация успешна. Пользователь: {user}")
+                        break
                     else:
+                        logger.warning("Регистрация не прошла, пробуем снова с новым юзером через 15 секунд...")
                         time.sleep(15)
-                        continue
+
+            # Если во время регистрации IP изменился (и регистрация не успела пройти), переходим к следующей итерации
+            if not registered:
+                continue
 
             logger.info(f"Голосуем пользователем {user} с IP {current_ip}")
 
-            # Ограничение попыток голосования
-            vote_attempts = 0
-            max_vote_attempts = 20  # лимит попыток голосования
+            # Фаза голосования: пытаемся проголосовать с интервалом в 15 секунд
             vote_successful = False
-            while vote_attempts < max_vote_attempts:
+            while get_my_ip() == current_ip:
                 if votes(post_id, star_rating):
                     vote_successful = True
                     break
-                time.sleep(15)
-                # Если IP изменился в процессе голосования, прерываем попытку
-                if get_my_ip() != current_ip:
-                    break
-                vote_attempts += 1
+                else:
+                    logger.warning("Голос не засчитан, пробуем снова через 15 секунд...")
+                    time.sleep(15)
 
             if vote_successful:
                 success_count += 1
-                time.sleep(180)
+                logger.info("Голосование успешно, ждем смены IP для следующего цикла.")
+                # После успешного голосования ждем, пока IP не изменится
+                while get_my_ip() == current_ip:
+                    time.sleep(15)
             else:
-                logger.warning("Голосование не выполнено за отведённое число попыток.")
-                # Переходим к следующей итерации внешнего цикла
-                continue
-
-            logger.info(f"Ожидаем смены IP (текущий: {current_ip})...")
-            # Ограничение ожидания смены IP
-            ip_wait_attempts = 0
-            max_ip_wait_attempts = 10  # например, 10 циклов по 30 секунд
-            while get_my_ip() == current_ip and ip_wait_attempts < max_ip_wait_attempts:
-                time.sleep(30)
-                ip_wait_attempts += 1
-
-            if ip_wait_attempts >= max_ip_wait_attempts:
-                logger.warning("IP не изменился за отведённое время, переключаемся на новый proxy.")
-                # Если смена IP не произошла, можно перейти к следующей итерации, чтобы попробовать сменить proxy
+                logger.warning("Не удалось проголосовать до смены IP.")
                 continue
 
         except RuntimeError:
-            logger.error("Произошла ошибка во время голосования.")
+            logger.error("Произошла ошибка во время голосования или регистрации.")
             time.sleep(15)
             continue
 
