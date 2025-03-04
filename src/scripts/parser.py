@@ -88,7 +88,7 @@ class HtmlParser:
         if not table:
             return None
 
-        rows = table.find_all("div", id="rating-table-item")[:10]
+        rows = table.find_all("div", id="rating-table-item")[:15]
         data = await load_from_json()
         new_data = {}
         result = []
