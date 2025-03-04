@@ -259,17 +259,40 @@ def main(post_id: str, star_rating: str, voices: int) -> str:
 
             logger.info(f"Голосуем пользователем {user} с IP {current_ip}")
 
-            while not votes(post_id, star_rating):
+            # Ограничение попыток голосования
+            vote_attempts = 0
+            max_vote_attempts = 20  # лимит попыток голосования
+            vote_successful = False
+            while vote_attempts < max_vote_attempts:
+                if votes(post_id, star_rating):
+                    vote_successful = True
+                    break
                 time.sleep(15)
+                # Если IP изменился в процессе голосования, прерываем попытку
                 if get_my_ip() != current_ip:
                     break
-            else:
+                vote_attempts += 1
+
+            if vote_successful:
                 success_count += 1
                 time.sleep(180)
+            else:
+                logger.warning("Голосование не выполнено за отведённое число попыток.")
+                # Переходим к следующей итерации внешнего цикла
+                continue
 
             logger.info(f"Ожидаем смены IP (текущий: {current_ip})...")
-            while get_my_ip() == current_ip:
+            # Ограничение ожидания смены IP
+            ip_wait_attempts = 0
+            max_ip_wait_attempts = 10  # например, 10 циклов по 30 секунд
+            while get_my_ip() == current_ip and ip_wait_attempts < max_ip_wait_attempts:
                 time.sleep(30)
+                ip_wait_attempts += 1
+
+            if ip_wait_attempts >= max_ip_wait_attempts:
+                logger.warning("IP не изменился за отведённое время, переключаемся на новый proxy.")
+                # Если смена IP не произошла, можно перейти к следующей итерации, чтобы попробовать сменить proxy
+                continue
 
         except RuntimeError:
             logger.error("Произошла ошибка во время голосования.")
